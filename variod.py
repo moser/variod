@@ -9,10 +9,14 @@ import pyaudio as _pyaudio
 
 SIM = True
 
+# PCM constants
+SAMPLE_RATE = 9600
+MAX_VOL = 100.0
+
 # vario defaults
 DEADBAND_LOW = -0.0
 DEADBAND_HIGH = 0.0  # DEADBAND: Vario remains silent for DEADBAND_LOW < TE value < DEADBAND_HIGH
-PULSE_LENGTH = 11288  # LENGTH of PULSE (PAUSE) for positive TE values, in samples
+PULSE_LENGTH = SAMPLE_RATE / 4  # LENGTH of PULSE (PAUSE) for positive TE values, in samples
 PULSE_LENGTH_GAIN = 1  # PULSES get shorter with higher TE values
 PULSE_DUTY = 2.6  # Pulse duty cycle 2*PI == 100%
 PULSE_RISE = 0.3  # Timing for rising edge of pulse (Fade-In)
@@ -24,7 +28,7 @@ FREQ_GAIN_NEG = -30
 
 STF_DEADBAND_LOW = -2.5  
 STF_DEADBAND_HIGH = 2.5  # DEADBAND: Vario remains silent for DEADBAND_LOW < STF value < DEADBAND_HIGH 
-STF_PULSE_LENGTH = 12288 # LENGTH of PULSE (PAUSE) for positive values, in samples
+STF_PULSE_LENGTH = SAMPLE_RATE / 4 # LENGTH of PULSE (PAUSE) for positive values, in samples
 STF_PULSE_LENGTH_GAIN = 0.2 # PULSES get shorter with higher values
 STF_PULSE_DUTY = 2.6 # Pulse duty cycle 2*PI == 100%
 STF_PULSE_RISE = 0.1 # Timing for rising edge of pulse (Fade-In)
@@ -33,10 +37,6 @@ STF_BASE_FREQ_POS = 400   # BASE frequency for positive STF values in Hz
 STF_BASE_FREQ_NEG = 400  # BASE frequency for negative STF values in Hz
 STF_FREQ_GAIN_POS = 30
 STF_FREQ_GAIN_NEG = 0.1
-
-# PCM constants
-SAMPLE_RATE = 44100
-MAX_VOL = 100.0
 
 # Encodings: Those need to match
 PA_FORMAT = _pyaudio.paUInt8
@@ -81,7 +81,7 @@ def main():
                         channels=1,
                         rate=SAMPLE_RATE,
                         output=True,
-                        frames_per_buffer=int(SAMPLE_RATE * 0.1),
+                        frames_per_buffer=int(SAMPLE_RATE * 0.2),
                         stream_callback=vario.callback)
     stream.start_stream()
 
