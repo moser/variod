@@ -3,6 +3,7 @@ import math as _m
 import socket as _socket
 import time as _time
 
+import numpy as np
 import pyaudio as _pyaudio
 
 # TODO logging
@@ -17,8 +18,8 @@ PULSE_LENGTH_GAIN = 1  # PULSES get shorter with higher TE values
 PULSE_DUTY = 2.6  # Pulse duty cycle 2*PI == 100%
 PULSE_RISE = 0.3  # Timing for rising edge of pulse (Fade-In)
 PULSE_FALL = 0.3  # Timing for falling edge of pulse (Fade-Out)
-BASE_FREQ_POS = 400  # BASE frequency for positive TE values in Hz
-BASE_FREQ_NEG = 400  # BASE frequency for negative TE values in Hz
+BASE_FREQ_POS = 440  # BASE frequency for positive TE values in Hz
+BASE_FREQ_NEG = 440  # BASE frequency for negative TE values in Hz
 FREQ_GAIN_POS = 100
 FREQ_GAIN_NEG = -30
 
@@ -29,8 +30,8 @@ STF_PULSE_LENGTH_GAIN = 0.2 # PULSES get shorter with higher values
 STF_PULSE_DUTY = 2.6 # Pulse duty cycle 2*PI == 100%
 STF_PULSE_RISE = 0.1 # Timing for rising edge of pulse (Fade-In)
 STF_PULSE_FALL = 0.1 # Timing for falling edge of pulse (Fade-Out)
-STF_BASE_FREQ_POS = 400   # BASE frequency for positive STF values in Hz
-STF_BASE_FREQ_NEG = 400  # BASE frequency for negative STF values in Hz
+STF_BASE_FREQ_POS = 440   # BASE frequency for positive STF values in Hz
+STF_BASE_FREQ_NEG = 440  # BASE frequency for negative STF values in Hz
 STF_FREQ_GAIN_POS = 30
 STF_FREQ_GAIN_NEG = 0.1
 
@@ -142,7 +143,6 @@ class Synthesizer(object):  # TODO test
         phase_ptr, pulse_phase_ptr = self.phase_ptr, self.pulse_phase_ptr
         config = self.config
 
-        _triangle = triangle
         _float = float
         two_pi = _m.pi * 2.0
 
@@ -158,6 +158,7 @@ class Synthesizer(object):  # TODO test
                 return max(0.0, 1.0 - ((phase - rise - duty) / fall))
             else:
                 return 0.0
+        _pulse_syn_vec = np.vectorize(_pulse_syn)
 
         if val > 0.5:
             pulse_freq = (
@@ -167,41 +168,27 @@ class Synthesizer(object):  # TODO test
             pulse_freq = (
                 _float(SAMPLE_RATE) / _float(config.pulse_length * 2))
 
-        _two_pi_sample_rate = two_pi / SAMPLE_RATE
         if val >= 0:
             freq = config.base_freq_pos + (_m.sqrt(val) * config.freq_gain_pos)
             buff = (
-                _pulse_syn(_float(j) * _two_pi_sample_rate
-                           * pulse_freq + pulse_phase_ptr)
-                * _triangle(_float(j) * _two_pi_sample_rate
-                            * freq + phase_ptr)
-                * scale
-                + MAX_SAMPLE
-                for j in xrange(n_frames)
+                _pulse_syn_vec(
+                    np.arange(n_frames)
+                    * two_pi / SAMPLE_RATE * pulse_freq + pulse_phase_ptr)
+                * np.sin(np.arange(n_frames) * two_pi / SAMPLE_RATE * freq + phase_ptr)
+                * scale + MAX_SAMPLE
             )
         else:
             freq = config.base_freq_pos + (1.0 - val * config.freq_gain_neg)
             buff = (
-                _triangle(_float(j) * _two_pi_sample_rate * freq + phase_ptr)
-                * scale
-                + MAX_SAMPLE
-                for j in xrange(n_frames)
+                np.sin(np.arange(n_frames) * two_pi / SAMPLE_RATE * freq + phase_ptr)
+                * scale + MAX_SAMPLE
             )
 
-        phase = _float(n_frames - 1) * _two_pi_sample_rate
+        phase = _float(n_frames - 1) * two_pi / SAMPLE_RATE
         self.phase_ptr = _m.fmod(phase * freq + phase_ptr, two_pi);
         self.pulse_phase_ptr = _m.fmod(phase * pulse_freq + pulse_phase_ptr,
                                        two_pi);
         return (int(x) for x in buff)
-
-
-def triangle(phase):
-    pi, two_pi = _m.pi, _m.pi * 2.0
-    phase = _m.fmod(phase, two_pi)
-    if phase < pi:
-        return (phase - pi / 2) * 2 / pi
-    else:
-        return 1 - (phase - pi) * 2 / pi
 
 
 class adict(dict):
