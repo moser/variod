@@ -21,8 +21,8 @@ PULSE_LENGTH_GAIN = 1  # PULSES get shorter with higher TE values
 PULSE_DUTY = 2.6  # Pulse duty cycle 2*PI == 100%
 PULSE_RISE = 0.3  # Timing for rising edge of pulse (Fade-In)
 PULSE_FALL = 0.3  # Timing for falling edge of pulse (Fade-Out)
-BASE_FREQ_POS = 400  # BASE frequency for positive TE values in Hz
-BASE_FREQ_NEG = 400  # BASE frequency for negative TE values in Hz
+BASE_FREQ_POS = 440  # BASE frequency for positive TE values in Hz
+BASE_FREQ_NEG = 440  # BASE frequency for negative TE values in Hz
 FREQ_GAIN_POS = 100
 FREQ_GAIN_NEG = -30
 
@@ -33,8 +33,8 @@ STF_PULSE_LENGTH_GAIN = 0.2 # PULSES get shorter with higher values
 STF_PULSE_DUTY = 2.6 # Pulse duty cycle 2*PI == 100%
 STF_PULSE_RISE = 0.1 # Timing for rising edge of pulse (Fade-In)
 STF_PULSE_FALL = 0.1 # Timing for falling edge of pulse (Fade-Out)
-STF_BASE_FREQ_POS = 400   # BASE frequency for positive STF values in Hz
-STF_BASE_FREQ_NEG = 400  # BASE frequency for negative STF values in Hz
+STF_BASE_FREQ_POS = 440   # BASE frequency for positive STF values in Hz
+STF_BASE_FREQ_NEG = 440  # BASE frequency for negative STF values in Hz
 STF_FREQ_GAIN_POS = 30
 STF_FREQ_GAIN_NEG = 0.1
 
@@ -77,11 +77,22 @@ def main():
 
     vario = Vario(config)
     audio = _pyaudio.PyAudio()
+
+    # find device
+    device_name = "convert"
+    for index in range(audio.get_device_count()):
+        desc = audio.get_device_info_by_index(index)
+        if desc["name"] == device_name:
+            device = index
+            print desc
+            break
+
     stream = audio.open(format=PA_FORMAT,
                         channels=1,
                         rate=SAMPLE_RATE,
                         output=True,
-                        frames_per_buffer=int(SAMPLE_RATE * 0.2),
+                        output_device_index=index,
+                        frames_per_buffer=int(SAMPLE_RATE * 0.5),
                         stream_callback=vario.callback)
     stream.start_stream()
 
@@ -142,14 +153,14 @@ class Synthesizer(object):  # TODO test
         phase_ptr, pulse_phase_ptr = self.phase_ptr, self.pulse_phase_ptr
         config = self.config
 
-        _triangle = triangle
-        _float = float
+        _float, _fmod, _sin = float, _m.fmod, _m.sin
         two_pi = _m.pi * 2.0
+        _two_pi_sample_rate = two_pi / SAMPLE_RATE
 
         # TODO extract into generating function
         rise, fall, duty = (config.pulse_rise, config.pulse_fall, config.pulse_duty)
         def _pulse_syn(phase):
-            phase = _m.fmod(phase, two_pi);
+            phase = _fmod(phase, two_pi);
             if phase < rise:
                 return min(1.0, phase / rise)
             elif phase < rise + duty:
@@ -167,41 +178,34 @@ class Synthesizer(object):  # TODO test
             pulse_freq = (
                 _float(SAMPLE_RATE) / _float(config.pulse_length * 2))
 
-        _two_pi_sample_rate = two_pi / SAMPLE_RATE
         if val >= 0:
             freq = config.base_freq_pos + (_m.sqrt(val) * config.freq_gain_pos)
+            freqx = freq * _two_pi_sample_rate
+            pulse_freqx = pulse_freq * _two_pi_sample_rate
             buff = (
-                _pulse_syn(_float(j) * _two_pi_sample_rate
-                           * pulse_freq + pulse_phase_ptr)
-                * _triangle(_float(j) * _two_pi_sample_rate
-                            * freq + phase_ptr)
+                _pulse_syn(j * pulse_freqx + pulse_phase_ptr)
+                * _sin(j * freqx + phase_ptr)
                 * scale
                 + MAX_SAMPLE
-                for j in xrange(n_frames)
+                for j in
+                (_float(j) for j in xrange(n_frames))
             )
         else:
             freq = config.base_freq_pos + (1.0 - val * config.freq_gain_neg)
+            freqx = freq * _two_pi_sample_rate
             buff = (
-                _triangle(_float(j) * _two_pi_sample_rate * freq + phase_ptr)
+                _sin(j * freqx + phase_ptr)
                 * scale
                 + MAX_SAMPLE
-                for j in xrange(n_frames)
+                for j in
+                (_float(j) for j in xrange(n_frames))
             )
 
         phase = _float(n_frames - 1) * _two_pi_sample_rate
-        self.phase_ptr = _m.fmod(phase * freq + phase_ptr, two_pi);
-        self.pulse_phase_ptr = _m.fmod(phase * pulse_freq + pulse_phase_ptr,
-                                       two_pi);
+        self.phase_ptr = _fmod(phase * freq + phase_ptr, two_pi);
+        self.pulse_phase_ptr = _fmod(phase * pulse_freq + pulse_phase_ptr,
+                                     two_pi);
         return (int(x) for x in buff)
-
-
-def triangle(phase):
-    pi, two_pi = _m.pi, _m.pi * 2.0
-    phase = _m.fmod(phase, two_pi)
-    if phase < pi:
-        return (phase - pi / 2) * 2 / pi
-    else:
-        return 1 - (phase - pi) * 2 / pi
 
 
 class adict(dict):
