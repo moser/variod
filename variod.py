@@ -1,10 +1,9 @@
-import collections as _collections
 import math as _m
-import struct as _struct
-import threading as _threading
+#import struct as _struct
+import socket as _socket
 import time as _time
 
-import alsaaudio as _a
+import pyaudio as _pyaudio
 
 # TODO logging
 
@@ -40,9 +39,9 @@ SAMPLE_RATE = 44100
 MAX_VOL = 100.0
 
 # Encodings: Those need to match
-PCM_FORMAT = _a.PCM_FORMAT_U8  # little endian signed short
+PA_FORMAT = _pyaudio.paUInt8
 MAX_SAMPLE = 2 ** 7 - 1  # max of signed short
-#PACK_FORMAT = "<h"  # little endian signed short, see struct docs
+#PACK_FORMAT = "<B"  # little endian signed short, see struct docs
 
 
 def main():
@@ -75,22 +74,26 @@ def main():
             freq_gain_neg=STF_FREQ_GAIN_NEG,
         ),
     )
-    comm = adict(
-        config=config,
-        audio_value=0.0,
-        audio_mode="vario",
-        volume=50.0,
-    )
-    sound_thread = _threading.Thread(target=sound_main, args=(comm,))
-    sound_thread.daemon = True
-    sound_thread.start()
+
+    vario = Vario(config)
+    audio = _pyaudio.PyAudio()
+    stream = audio.open(format=PA_FORMAT,
+                        channels=1,
+                        rate=SAMPLE_RATE,
+                        output=True,
+                        frames_per_buffer=int(SAMPLE_RATE * 0.1),
+                        stream_callback=vario.callback)
+    stream.start_stream()
 
     if SIM:
-        for i in range(100):
+        i = 0
+        while stream.is_active():
             _time.sleep(1)
-            comm.audio_value = _m.sin(float(i) / 8.0) * 4.5
+            vario.audio_value = _m.sin(float(i) / 8.0) * 4.5
+            print vario.audio_value
+            i += 1
     else:
-        import socket as _socket
+        pass
         # TODO accept connection on 4353 (sensord)
         # connect to 4352 (xcsoar)
         # read data from sensord
@@ -100,42 +103,41 @@ def main():
         # read commands from xcsoar
         # parse & execute commands
 
+    stream.stop_stream()
+    stream.close()
+    audio.terminate()
+
 
 # TODO implement STF logic
 
 
-def sound_main(comm):
-    pcm = _a.PCM(mode=_a.PCM_NORMAL)
-    pcm.setchannels(1)
-    pcm.setrate(SAMPLE_RATE)
-    pcm.setformat(PCM_FORMAT)
-    period = 0.2  # sec the signal stays the same
-    synthesizer = Synthesizer(comm.config[comm.audio_mode])
+class Vario(object):
+    def __init__(self, config):
+        self.config = config
+        self.audio_value = 0.0
+        self.volume = 50.0
+        self._audio_mode = "vario"
+        self.synth = Synthesizer(config[self._audio_mode])
 
-    wrote = 0
-    iteration_took = period
-    sound_started = _time.time()
-    # TODO `wrote` will overflow, reset from time to time
-    while True:
-        iteration_started = _time.time()
-        target_time = iteration_started + iteration_took + 2 * period
-        frames = int(SAMPLE_RATE * (target_time - sound_started) - wrote)
-        if frames > 0:
-            pcm.write(synthesizer.synthesize(comm.audio_value, frames))
-        wrote += frames
-        iteration_took = _time.time() - iteration_started
-        _time.sleep(min(period - iteration_took, 0.0001))
-        iteration_took = _time.time() - iteration_started
+    def set_audio_mode(self, val):
+        self._audio_mode = val
+        self.synth.config = self.config[val]
+
+    def callback(self, in_data, frame_count, time_info, status):
+        samples = self.synth.synthesize(self.audio_value, frame_count,
+                                        self.volume)
+        #return ("".join((_struct.pack(PACK_FORMAT, x) for x in samples)),
+        #        _pyaudio.paContinue)
+        return ("".join((chr(x) for x in samples)), _pyaudio.paContinue)
 
 
 class Synthesizer(object):  # TODO test
     def __init__(self, config):
-        self.volume = 50.0
         self.phase_ptr = self.pulse_phase_ptr = 0.0
         self.config = config
 
-    def synthesize(self, val, n_frames):
-        scale = MAX_SAMPLE / MAX_VOL * self.volume
+    def synthesize(self, val, n_frames, volume):
+        scale = MAX_SAMPLE / MAX_VOL * volume
 
         phase_ptr, pulse_phase_ptr = self.phase_ptr, self.pulse_phase_ptr
         config = self.config
@@ -174,6 +176,7 @@ class Synthesizer(object):  # TODO test
                 * _triangle(_float(j) * _two_pi_sample_rate
                             * freq + phase_ptr)
                 * scale
+                + MAX_SAMPLE
                 for j in xrange(n_frames)
             )
         else:
@@ -181,6 +184,7 @@ class Synthesizer(object):  # TODO test
             buff = (
                 _triangle(_float(j) * _two_pi_sample_rate * freq + phase_ptr)
                 * scale
+                + MAX_SAMPLE
                 for j in xrange(n_frames)
             )
 
@@ -188,8 +192,7 @@ class Synthesizer(object):  # TODO test
         self.phase_ptr = _m.fmod(phase * freq + phase_ptr, two_pi);
         self.pulse_phase_ptr = _m.fmod(phase * pulse_freq + pulse_phase_ptr,
                                        two_pi);
-
-        return "".join((chr(int(x) + 127) for x in buff))
+        return (int(x) for x in buff)
 
 
 def triangle(phase):
