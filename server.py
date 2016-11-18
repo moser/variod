@@ -32,7 +32,8 @@ def main():
                     buff = fp.recv(4096)
                     if not buff:
                         print "disconnected", fp
-                        rconns.remove(fp)
+                        if fp in rconns:
+                            rconns.remove(fp)
                         continue
                     #print "read", fp, buff
                     if fp is xconn:
@@ -45,7 +46,8 @@ def main():
                             xconn.send(buff)
                           except:
                             print "send failed"
-                            rconns.remove(xconn)
+                            if xconn in rconns:
+                                rconns.remove(xconn)
 
             if xconn not in rconns:
                 try:
