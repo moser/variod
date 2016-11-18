@@ -4,3 +4,4 @@ variod
 varioapp
 *.swp
 .venv/
+*.pyc

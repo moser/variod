@@ -45,7 +45,7 @@ MAX_SAMPLE = 2 ** 7 - 1  # max of signed short
 #PACK_FORMAT = "<B"  # little endian signed short, see struct docs
 
 
-def main():
+def get_config():
     # TODO accept config from a file
     config = adict(
         vario=adict(
@@ -75,38 +75,35 @@ def main():
             freq_gain_neg=STF_FREQ_GAIN_NEG,
         ),
     )
+    return config
 
-    vario = Vario(config)
-    audio = _pyaudio.PyAudio()
-    stream = audio.open(format=PA_FORMAT,
-                        channels=1,
-                        rate=SAMPLE_RATE,
-                        output=True,
-                        frames_per_buffer=int(SAMPLE_RATE * 0.1),
-                        stream_callback=vario.callback)
-    stream.start_stream()
+def main():
+    config = get_config()
+    vario_system = VarioSystem(config)
+    i = 0
+    while True:
+        _time.sleep(1)
+        vario_system.vario.audio_value = _m.sin(float(i) / 8.0) * 4.5
+        print vario_system.vario.audio_value
+        i += 1
 
-    if SIM:
-        i = 0
-        while stream.is_active():
-            _time.sleep(1)
-            vario.audio_value = _m.sin(float(i) / 8.0) * 4.5
-            print vario.audio_value
-            i += 1
-    else:
-        pass
-        # TODO accept connection on 4353 (sensord)
-        # connect to 4352 (xcsoar)
-        # read data from sensord
-        # forward data to xcsoar
-        # parse nmea
-        # update vals
-        # read commands from xcsoar
-        # parse & execute commands
+class VarioSystem(object):
+    def __init__(self, config):
+        self.vario = Vario(config)
+        self.audio = _pyaudio.PyAudio()
+        self.stream = self.audio.open(format=PA_FORMAT,
+                                      channels=1,
+                                      rate=SAMPLE_RATE,
+                                      output=True,
+                                      frames_per_buffer=int(SAMPLE_RATE * 0.1),
+                                      stream_callback=self.vario.callback)
+        self.stream.start_stream()
 
-    stream.stop_stream()
-    stream.close()
-    audio.terminate()
+
+    def close(self):
+        self.stream.stop_stream()
+        self.stream.close()
+        self.audio.terminate()
 
 
 # TODO implement STF logic
