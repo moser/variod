@@ -22,7 +22,7 @@ def main():
     try:
         while True:
             readable, wrt, exc = _select.select(rconns, [], [])
-            print readable, wrt, exc
+            #print readable, wrt, exc
             for fp in readable:
                 if fp is ssock:
                     conn, _ = fp.accept()
@@ -58,7 +58,7 @@ def main():
                     print "failed to connect to xcsoar"
 
             if not readable:
-                print "sleeping"
+                #print "sleeping"
                 _time.sleep(1)
     except:
         ssock.close()
@@ -73,12 +73,12 @@ VARIO_RGX = _re.compile(r"POV,E,([-+]\d+\.\d*)")
 
 class SensorHandler(object):
     def __init__(self):
-        self.vario_system = _v.VarioSystem(_v.get_config())
+        self.vario_system = _v.VarioSystem()
 
     def handle_input(self, buff):
-        print buff
+        #print buff
         for line in buff.split("\n"):
-            print line
+            #print line
             for match in VARIO_RGX.findall(line):
                 try:
                     val = float(match)
