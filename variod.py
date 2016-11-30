@@ -44,7 +44,7 @@ class VarioSystem(object):
                                       channels=1,
                                       rate=SAMPLE_RATE,
                                       output=True,
-                                      frames_per_buffer=int(SAMPLE_RATE * 0.05),
+                                      frames_per_buffer=int(SAMPLE_RATE * 0.2),
                                       stream_callback=self.vario.callback)
         self.stream.start_stream()
 

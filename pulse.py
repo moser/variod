@@ -61,24 +61,50 @@ class DefaultFrequencyStrategy(object):
     #    gain = 100
     #    return base + (val ** 0.55 * gain)
 
-
     def pulse_freq(self, val):
         if val > 0.0:
             return 2.5 * (
                 1.0 - 1.0 / (val ** 2.0 + 1.0)
             ) + 1.8
         else:
-            return 0#1.8
+            return 1.8
 
 
 class PulsedSoundGen(object):
     def __init__(self, sound_gen, pulse_gen):
         self.sound_gen = sound_gen
         self.pulse_gen = pulse_gen
+        self.last_freq = None
 
     def get(self, freq, pulse_freq, length):
-        return self.pulse_gen.get(pulse_freq, length)\
-            * self.sound_gen.get(freq, length)
+        """ Creates a numpy array of length containing the samples of a
+        pulsed sound. It only changes the sound `freq` when there is a
+        a pause (or if the `pulse_freq` is zero). """
+        if pulse_freq > 0:
+            pulse = self.pulse_gen.get(pulse_freq, length)
+            first_zero = np.argmax(pulse == 0)
+            if first_zero == 0 and pulse[0] != 0:
+                first_zero = length
+            if first_zero >= length and self.last_freq is not None:
+                # we don't have a pause, maintain old freq
+                sound = self.sound_gen.get(self.last_freq, length)
+            else:
+                # we have a pause, change to new freq on first sample
+                # of the pause.
+                sound = np.concatenate((
+                  self.sound_gen.get(self.last_freq or 0.001, first_zero),
+                  self.sound_gen.get(freq, length - first_zero)))
+                self.last_freq = freq
+            return pulse * sound
+        else:
+            return self._strict_get(freq, pulse_freq, length)
+
+    # This version changes the sound frequency during a beep, thus causing
+    # some sound artifacts.
+    def _strict_get(self, freq, pulse_freq, length):
+        pulse = self.pulse_gen.get(pulse_freq, length)
+        sound = self.sound_gen.get(freq, length)
+        return pulse * sound
 
 
 class PulseGen(object):
